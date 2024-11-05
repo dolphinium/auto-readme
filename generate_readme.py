@@ -1,21 +1,63 @@
 import os
 from openai import OpenAI
+import nbformat
+
 
 def summarize_code_files():
     summaries = ""
+    generator_script = 'generate_readme.py'  # Name of the script generating README files
+
     for root, _, files in os.walk('.'):
         for file in files:
+            file_path = os.path.join(root, file)
+            
+            # Skip the README generator script itself
+            if file == generator_script:
+                continue
+
             if file.endswith(('.py', '.js', '.java', '.cpp', '.md')) and file != 'README.md':
-                file_path = os.path.join(root, file)
                 summary = summarize_code(file_path)
                 summaries += summary + "\n\n"
+            elif file.endswith('.ipynb'):
+                # Process notebook files
+                summary = summarize_notebook(file_path)
+                summaries += summary + "\n\n"
+    
     return summaries
+
+
+
+def summarize_notebook(file_path):
+    """Extracts content from a Jupyter Notebook file and returns a summary."""
+    with open(file_path, 'r') as file:
+        notebook = nbformat.read(file, as_version=4)
+    
+    summary = f"Notebook: {file_path}\n"
+    
+    for cell in notebook.cells:
+        if cell.cell_type == "markdown":
+            # Add first few lines of each markdown cell
+            summary += "Markdown:\n" + "\n".join(cell.source.splitlines()[:3]) + "\n\n"
+        elif cell.cell_type == "code":
+            # Add first few lines of each code cell
+            code_snippet = "\n".join(cell.source.splitlines()[:3])  # Limit to 3 lines
+            summary += f"Code:\n```python\n{code_snippet}\n```\n\n"
+            
+            # Optionally, add output if available
+            if cell.outputs:
+                for output in cell.outputs:
+                    if 'text' in output:
+                        summary += f"Output:\n{output['text'][:100]}...\n\n"  # Truncate long outputs
+                    elif 'data' in output and 'text/plain' in output['data']:
+                        summary += f"Output:\n{output['data']['text/plain'][:100]}...\n\n"
+    
+    return summary
 
 def summarize_code(file_path):
     with open(file_path, 'r') as file:
         code = file.read()
     # Truncate code to avoid exceeding token limits
-    truncated_code = code[:1000]  # Adjust as needed
+    truncated_code = code[:2000]  # Adjust as needed
     return f"File: {file_path}\n```{truncated_code}```"
 
 def get_dependencies():
@@ -63,7 +105,7 @@ def generate_readme(prompt):
     response = client.chat.completions.create(
         model='gpt-4o',  # Use 'gpt-4' if you have access
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=1500,
+        max_tokens=3000,
         temperature=0.7,
     )
     return response.choices[0].message.content
